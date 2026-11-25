@@ -1,0 +1,11 @@
+{
+  "dorm_menu": {
+    "name": "봉룡학사",
+    "meals": [
+      { "name": "점심", "tab": "foodlist02", "emoji": "🌞" },
+      { "name": "저녁", "tab": "foodlist03", "emoji": "🌙" }
+    ],
+    "corners": ["공통"],
+    "main_only": true
+  }
+}

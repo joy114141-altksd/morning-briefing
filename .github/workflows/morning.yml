@@ -1,0 +1,50 @@
+name: Morning Briefing
+
+on:
+  # GitHub 자체 schedule은 정시 발동을 보장 안 해서 쓰지 않음.
+  # cron-job.org(외부 스케줄러)가 평일(월~금) 07:00(KST)에 workflow_dispatch API를 호출해서 실행함.
+  # (cron-job.org 에 넣은 GitHub 토큰이 만료되면 401 Unauthorized 로 멈추니, 토큰 만료일 주의)
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "점검용: 이 날짜(YYYY-MM-DD)의 식단을 보내기. 비우면 오늘."
+        required: false
+        default: ""
+
+permissions:
+  contents: read   # 저장할 상태가 없어서 읽기만
+
+concurrency:
+  group: morning-briefing
+  cancel-in-progress: false
+
+jobs:
+  briefing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      # 학교 서버가 GitHub 서버에서 처음 몇 분간 접속이 안 되는 경우가 있어 스크립트가 최대 8분까지 재시도한다.
+      # 그래도 실패하면 텔레그램으로 ⚠️ 알림이 간다.
+      - name: 아침 브리핑 전송
+        working-directory: briefing
+        run: |
+          if [ -n "$BRIEFING_DATE" ]; then
+            python briefing.py --date "$BRIEFING_DATE"
+          else
+            python briefing.py
+          fi
+        env:
+          BRIEFING_DATE: ${{ inputs.date }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
