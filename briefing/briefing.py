@@ -4,7 +4,8 @@
 -----------
 평일 아침마다 오늘의 식단을 텔레그램으로 보낸다.
   - 조식: 행단골식당 천원의 아침밥 (일반식 메인 1개 + 컵밥 1개)
-  - 점심·저녁: 기숙사(봉룡학사) 공통 코너 메인 메뉴 + 공대식당(해오름) 코너별 메인 메뉴 전부
+  - 점심·저녁: 기숙사(봉룡학사) 공통 코너 메인 메뉴 + config.json 의 restaurants (공대식당 코너별 메인, 행단골 2층 나폴리폴리 등)
+  - 학교 홈페이지에 가격이 있으면 메뉴 옆에 가격
 GitHub Actions 에서 실행된다 (cron-job.org 가 평일 07:00 KST 에 workflow_dispatch 를 호출).
 
 사용법:
@@ -13,7 +14,7 @@ GitHub Actions 에서 실행된다 (cron-job.org 가 평일 07:00 KST 에 workfl
     python briefing.py --date 2026-11-26       # 특정 날짜 식단
     python briefing.py --date 2026-11-25 --dry-run --html tests/sample_2026-11-25.html \\
         --skku-html B=tests/sample_skku_haengdan_B_2026-11-26.html \\
-        --skku-html L=tests/sample_skku_haeorum_L_2026-11-26.html --skku-html D=tests/sample_skku_haeorum_D_2026-11-26.html
+        --skku-html 공대:L=tests/sample_skku_haeorum_L_2026-11-26.html --skku-html 공대:D=tests/sample_skku_haeorum_D_2026-11-26.html
                                                # 저장해둔 페이지로 점검 (접속 없이)
 
 받게 되는 메시지:
@@ -99,6 +100,8 @@ def read_skku(day: date, category: str, cfg: dict, html_path: str = None, label:
         for c in parsed["corners"]:
             for k, v in c["sections"].items():
                 log(f"  {label} [{c['corner']}] [{k}] {', '.join(v)}")
+            extra = "; ".join(f"{a}={b}" if a else b for a, b in c.get("fields", []))
+            log(f"    가격: {c.get('price') or '없음'}" + (f"  (기타 정보: {extra[:200]})" if extra else ""))
         if not parsed["corners"]:
             log(f"  {label}: 그날 메뉴 없음")
         return parsed
@@ -112,21 +115,35 @@ def get_breakfast(day: date, cfg: dict, html_path: str = None):
     parsed = read_skku(day, "B", cfg, html_path, label=f"조식 {cfg.get('name', '')}")
     if isinstance(parsed, Exception):
         return parsed
-    items = skku_menu.pick_breakfast(parsed)
+    items = skku_menu.pick_breakfast(parsed, cfg.get("default_price", ""))
     log(f"  -> 보낼 조식: {items or '없음'}")
     return {"time": parsed["time"], "items": items}
 
 
-def get_engineering(day: date, cfg: dict, meals: list, html_paths: dict):
-    """반환: {"점심": {"time", "items": [(코너, 메인), ...]} 또는 Exception, "저녁": ...}"""
-    out = {}
-    for meal in meals:
-        cat = meal.get("skku_category")
-        if not cat:
+def get_restaurants(day: date, restaurants: list, meals: list, html_paths: dict):
+    """
+    반환: [{"cfg": 식당설정, "meals": {"점심": {"time", "items": [(코너, 메뉴, 가격), ...]} 또는 Exception, ...}}, ...]
+    html_paths: 점검용 {"공대:L": 파일, ...}
+    """
+    cat_of = {m["name"]: m.get("skku_category") for m in meals}
+    out = []
+    for r in restaurants:
+        if not r.get("enabled", True):
             continue
-        parsed = read_skku(day, cat, cfg, html_paths.get(cat), label=f"{meal['name']} {cfg.get('name', '')}")
-        out[meal["name"]] = parsed if isinstance(parsed, Exception) else {
-            "time": parsed["time"], "items": skku_menu.pick_corner_mains(parsed, cfg.get("corners") or None)}
+        res = {"cfg": r, "meals": {}}
+        for meal_name in r.get("meals", []):
+            cat = cat_of.get(meal_name)
+            if not cat:
+                continue
+            path = html_paths.get(f"{r['name']}:{cat}")
+            parsed = read_skku(day, cat, r, path, label=f"{meal_name} {r['name']}")
+            if isinstance(parsed, Exception):
+                res["meals"][meal_name] = parsed
+            else:
+                items = skku_menu.pick_corner_menus(parsed, r.get("corners") or None, r.get("show") == "all")
+                res["meals"][meal_name] = {"time": parsed["time"], "items": items}
+                log(f"  -> 보낼 {meal_name} {r['name']}: {items or '없음'}")
+        out.append(res)
     return out
 
 
@@ -157,16 +174,19 @@ def day_label(day: date) -> str:
     return f"{day.month}/{day.day} ({WEEKDAYS[day.weekday()]})"
 
 
-def build_message(day: date, config: dict, breakfast, dorm, eng) -> str:
-    bcfg, dcfg, ecfg = config.get("breakfast", {}), config["dorm_menu"], config.get("engineering", {})
+def with_price(name: str, price: str) -> str:
+    return f"{name} {price}" if price else name
+
+
+def build_message(day: date, config: dict, breakfast, dorm, restaurants) -> str:
+    bcfg, dcfg = config.get("breakfast", {}), config["dorm_menu"]
     use_breakfast = bcfg.get("enabled", True)
-    use_eng = ecfg.get("enabled", True)
-    eng = eng or {}
+    restaurants = restaurants or []
 
     b_empty = (not use_breakfast) or (isinstance(breakfast, dict) and not breakfast["items"])
     d_empty = isinstance(dorm, dict) and not any(dorm.values())
-    e_empty = (not use_eng) or all(isinstance(v, dict) and not v["items"] for v in eng.values())
-    if b_empty and d_empty and e_empty:
+    r_empty = all(isinstance(v, dict) and not v["items"] for r in restaurants for v in r["meals"].values())
+    if b_empty and d_empty and r_empty:
         return f"🍚 <b>{day_label(day)}</b> 오늘은 식단이 없어요"
 
     lines = [f"🍚 <b>{day_label(day)} 오늘의 식단</b>"]
@@ -184,16 +204,15 @@ def build_message(day: date, config: dict, breakfast, dorm, eng) -> str:
             lines += [head, "없음"]
         else:
             lines.append(f"{head} {breakfast['time']} · {html_escape(bcfg.get('name', '행단골'))}".replace("  ", " "))
-            lines += [html_escape(it) for it in breakfast["items"]]
+            lines += [html_escape(with_price(name, price)) for name, price in breakfast["items"]]
 
-    # 점심·저녁: 기숙사 + 공대
+    # 점심·저녁: 기숙사 + 학교 식당들
     dname = dcfg.get("name", "기숙사")
-    ename = ecfg.get("name", "공대")
     if isinstance(dorm, Exception):
         links.append(f'<a href="{dorm_menu.PAGE_URL}">{html_escape(dname)} 식단표 보기</a>')
     for meal in dcfg["meals"]:
         lines += ["", f"{meal['emoji']} <b>{meal['name']}</b>"]
-        # 기숙사
+        # 기숙사 (사이트에 공통 코너 가격이 없어 가격 없음)
         if isinstance(dorm, Exception):
             lines.append(f"<b>{html_escape(dname)}</b> ⚠️ 확인 못함 ({html_escape(failure_reason(dorm))})")
         else:
@@ -206,19 +225,23 @@ def build_message(day: date, config: dict, breakfast, dorm, eng) -> str:
                     text = dorm_menu.main_dish(c["items"]) if dcfg.get("main_only", True) else ", ".join(c["items"])
                     prefix = f"{c['corner']} · " if len(dcfg["corners"]) > 1 else ""
                     lines.append(html_escape(prefix + text))
-        # 공대
-        if use_eng and meal["name"] in eng:
-            res = eng[meal["name"]]
+        # 학교 식당들
+        for r in restaurants:
+            if meal["name"] not in r["meals"]:
+                continue
+            rcfg, res, rname = r["cfg"], r["meals"][meal["name"]], r["cfg"]["name"]
             if isinstance(res, Exception):
-                lines.append(f"<b>{html_escape(ename)}</b> ⚠️ 확인 못함 ({html_escape(failure_reason(res))})")
-                url = skku_menu.menu_url(day, meal["skku_category"], ecfg["conspaceCd"], ecfg["srResId"])
-                links.append(f'<a href="{html_escape(url)}">{html_escape(ename)} {meal["name"]} 보기</a>')
+                lines.append(f"<b>{html_escape(rname)}</b> ⚠️ 확인 못함 ({html_escape(failure_reason(res))})")
+                url = skku_menu.menu_url(day, meal["skku_category"], rcfg["conspaceCd"], rcfg["srResId"])
+                links.append(f'<a href="{html_escape(url)}">{html_escape(rname)} {meal["name"]} 보기</a>')
             elif not res["items"]:
-                lines.append(f"<b>{html_escape(ename)}</b> 없음")
+                if not rcfg.get("optional"):  # optional: 메뉴가 있을 때만 표시
+                    lines.append(f"<b>{html_escape(rname)}</b> 없음")
             else:
-                lines.append(f"<b>{html_escape(ename)}</b> {res['time']}".rstrip())
-                for corner, main in res["items"]:
-                    lines.append(html_escape(f"{corner} · {main}" if corner else main))
+                lines.append(f"<b>{html_escape(rname)}</b> {res['time']}".rstrip())
+                for corner, name, price in res["items"]:
+                    text = with_price(name, price)
+                    lines.append(html_escape(f"{corner} · {text}" if corner else text))
 
     if links:
         lines += ["", " · ".join(links)]
@@ -234,7 +257,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="텔레그램으로 보내지 않고 메시지만 출력")
     parser.add_argument("--html", help="접속하지 않고 저장해둔 기숙사 식단 페이지로 점검")
     parser.add_argument("--skku-html", action="append", default=[], metavar="분류=파일",
-                        help="접속하지 않고 저장해둔 학교 식당 페이지로 점검 (B=조식 행단골, L/D=공대 중식/석식)")
+                        help="접속하지 않고 저장해둔 학교 식당 페이지로 점검 (B=조식, 식당이름:L / 식당이름:D)")
     parser.add_argument("--force", action="store_true", help="주말에도 실행")
     args = parser.parse_args()
 
@@ -255,13 +278,13 @@ def main():
     log(f"아침 브리핑 {datetime.now(KST):%Y-%m-%d %H:%M} KST, 식단 날짜 {day}")
 
     skku_files = dict(x.split("=", 1) for x in args.skku_html)
-    bcfg, ecfg = config.get("breakfast", {}), config.get("engineering", {})
+    bcfg = config.get("breakfast", {})
     breakfast = get_breakfast(day, bcfg, skku_files.get("B")) if bcfg.get("enabled", True) else None
     dorm = get_dorm(day, config["dorm_menu"], args.html)
-    eng = get_engineering(day, ecfg, config["dorm_menu"]["meals"], skku_files) if ecfg.get("enabled", True) else {}
-    message = build_message(day, config, breakfast, dorm, eng)
+    restaurants = get_restaurants(day, config.get("restaurants", []), config["dorm_menu"]["meals"], skku_files)
+    message = build_message(day, config, breakfast, dorm, restaurants)
     failed = (isinstance(breakfast, Exception) or isinstance(dorm, Exception)
-              or any(isinstance(v, Exception) for v in eng.values()))
+              or any(isinstance(v, Exception) for r in restaurants for v in r["meals"].values()))
 
     if args.dry_run:
         log("[dry-run 전송 생략]\n" + message)

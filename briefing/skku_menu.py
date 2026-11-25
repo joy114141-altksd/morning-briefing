@@ -38,6 +38,7 @@ TOTAL_FETCH_SECONDS = 180
 DAY_RE = re.compile(r"\((\d{1,2})\.(\d{1,2})\)")
 HEADER_RE = re.compile(r"^\[(.*)\]$")
 TIME_WORDS = {"B": "조식|아침", "L": "중식|점심", "D": "석식|저녁"}
+PRICE_RE = re.compile(r"(?:[₩￦]\s*(\d{1,3}(?:,\d{3})+|\d{3,6}))|(?:(\d{1,3}(?:,\d{3})+|\d{3,6})\s*원)")
 
 # 메인으로 치지 않을 항목 (밥, 국물 곁들임, 김치류)
 NOT_MAIN = re.compile(r"^(쌀밥|밥|백미밥|잡곡밥|흑미밥|현미밥|기장밥|보리밥)(/.*)?$|김치$|깍두기$|단무지$|숭늉$")
@@ -95,10 +96,49 @@ def corner_name(cont) -> str:
     h6 = cont.find("h6")
     if not h6:
         return ""
+    h6 = BeautifulSoup(str(h6), "html.parser").find("h6")  # 원본은 건드리지 않음
     for span in h6.find_all("span"):
         span.extract()  # "<span>코너</span>" 같은 꾸밈 글자 제거
     name = _clean(h6.get_text(" "))
     return re.sub(r"^\d+F\s*", "", name)  # "1F 피키피커스" -> "피키피커스"
+
+
+def find_price(text: str) -> str:
+    """'6,500원' / '￦6500' -> '6,500원'"""
+    m = PRICE_RE.search(text or "")
+    if not m:
+        return ""
+    digits = (m.group(1) or m.group(2)).replace(",", "")
+    return f"{int(digits):,}원"
+
+
+def corner_fields(cont) -> list:
+    """메뉴 칸 말고 나머지 정보 칸들: [("가격", "6,000원"), ("", "..."), ...] (가격 찾기 + 로그용)"""
+    fields = []
+    h6 = cont.find("h6")
+    if h6:
+        for span in h6.find_all("span"):
+            t = _clean(span.get_text(" "))
+            if t and t != "코너":
+                fields.append(("제목", t))
+    for li in cont.select("ul > li"):
+        if li.find("pre"):
+            continue
+        span = li.find("span")
+        label = _clean(span.get_text(" ")) if span else ""
+        value = _clean(li.get_text(" "))
+        if label and value.startswith(label):
+            value = value[len(label):].strip()
+        if label or value:
+            fields.append((label, value))
+    for p in cont.find_all("p"):
+        cls = " ".join(p.get("class") or [])
+        if "mealImg" in cls or "btnList" in cls:
+            continue
+        t = _clean(p.get_text(" "))
+        if t:
+            fields.append((cls or "p", t))
+    return fields
 
 
 def meal_time(soup, category: str) -> str:
@@ -129,7 +169,15 @@ def parse(html: str, day: date, category: str) -> dict:
                 for k, v in parse_sections(pre.get_text("\n")).items():
                     sections.setdefault(k, []).extend(v)
             if any(sections.values()):
-                result["corners"].append({"corner": corner_name(cont), "sections": sections})
+                fields = corner_fields(cont)
+                price = ""
+                for label, value in fields:
+                    if "가격" in label or "금액" in label:
+                        price = find_price(value) or price
+                if not price:
+                    price = next((find_price(v) for _, v in fields if find_price(v)), "")
+                result["corners"].append({"corner": corner_name(cont), "sections": sections,
+                                          "price": price, "fields": fields})
         break
     return result
 
@@ -137,37 +185,59 @@ def parse(html: str, day: date, category: str) -> dict:
 # ---------------------------------------------------------
 # 식당별로 보낼 메뉴 고르기
 # ---------------------------------------------------------
-def pick_breakfast(parsed: dict) -> list:
-    """천원의 아침밥: 일반식 메인 1개 + 컵밥 1개"""
-    sections = {}
+def _item_price(item: str, fallback: str) -> tuple:
+    """메뉴 글자 안에 가격이 같이 적혀 있으면 떼어낸다: '까르보나라 6,500원' -> ('까르보나라', '6,500원')"""
+    price = find_price(item)
+    if price:
+        item = _clean(PRICE_RE.sub("", item)).strip(" -·/")
+    return item, price or fallback
+
+
+def pick_breakfast(parsed: dict, default_price: str = "") -> list:
+    """천원의 아침밥: 일반식 메인 1개 + 컵밥 1개 -> [(메뉴, 가격), ...]  (페이지에 가격이 없으면 default_price)"""
+    sections, price = {}, ""
     for c in parsed["corners"]:
+        price = price or c.get("price", "")
         for k, v in c["sections"].items():
             sections.setdefault(k, []).extend(v)
-    items = []
+    price = price or default_price
+    picked = []
     normal = next((v for k, v in sections.items() if "일반" in k), None)
     cup = next((v for k, v in sections.items() if "컵밥" in k), None)
     if normal:
-        items.append(main_item(normal))
+        picked.append(main_item(normal))
     if cup:
-        items.append(main_item(cup))
-    if not items:  # 구분 표시가 없을 때: 첫 메뉴 하나
+        picked.append(main_item(cup))
+    if not picked:  # 구분 표시가 없을 때: 첫 메뉴 하나
         first = next((v for v in sections.values() if v), [])
         if first:
-            items.append(main_item(first))
-    return items
+            picked.append(main_item(first))
+    return [_item_price(it, price) for it in picked if it]
 
 
-def pick_corner_mains(parsed: dict, only_corners: list = None) -> list:
-    """코너마다 메인 1개: [("한식", "제육볶음"), ...]  only_corners 가 있으면 그 코너만 (이름 일부만 같아도 됨)"""
+def _menu_items(items: list) -> list:
+    """밥·김치·영문 행사 이름 등을 뺀 메뉴들"""
+    return [ORIGIN_RE.sub("", it).strip() for it in items
+            if not NOT_MAIN.search(it.replace(" ", "")) and HANGUL_RE.search(it)]
+
+
+def pick_corner_menus(parsed: dict, only_corners: list = None, show_all: bool = False) -> list:
+    """
+    코너별 메뉴 -> [(코너, 메뉴, 가격), ...]
+      show_all=False: 코너마다 메인 1개,  True: 코너의 메뉴 전부
+      only_corners: 이 이름(일부만 같아도 됨)이 들어간 코너만
+    """
     out = []
     for c in parsed["corners"]:
         if only_corners and not any(w in c["corner"] for w in only_corners):
             continue
         items = [it for v in c["sections"].values() for it in v]
-        main = main_item(items)
-        if main:
-            out.append((c["corner"], main))
+        chosen = _menu_items(items) if show_all else [main_item(items)]
+        for it in chosen:
+            if it:
+                name, price = _item_price(it, c.get("price", ""))
+                out.append((c["corner"], name, price))
     # 코너 이름이 전부 같으면(예: 공대식당은 모두 "한식"으로 나옴) 이름은 빼고 메뉴만
-    if len({corner for corner, _ in out}) <= 1 and len(out) > 1:
-        out = [("", main) for _, main in out]
+    if len({corner for corner, _, _ in out}) <= 1:
+        out = [("", name, price) for _, name, price in out]
     return out
