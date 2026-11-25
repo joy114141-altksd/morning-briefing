@@ -2,13 +2,22 @@
   "breakfast": {
     "enabled": true,
     "name": "행단골",
+    "conspaceCd": "20201104",
+    "srResId": "3",
     "emoji": "🌅"
   },
+  "engineering": {
+    "enabled": true,
+    "name": "공대",
+    "conspaceCd": "20201251",
+    "srResId": "12",
+    "corners": []
+  },
   "dorm_menu": {
-    "name": "봉룡학사",
+    "name": "기숙사",
     "meals": [
-      { "name": "점심", "tab": "foodlist02", "emoji": "🌞" },
-      { "name": "저녁", "tab": "foodlist03", "emoji": "🌙" }
+      { "name": "점심", "tab": "foodlist02", "emoji": "🌞", "skku_category": "L" },
+      { "name": "저녁", "tab": "foodlist03", "emoji": "🌙", "skku_category": "D" }
     ],
     "corners": ["공통"],
     "main_only": true
