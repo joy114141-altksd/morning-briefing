@@ -13,7 +13,10 @@
       "name": "공대",
       "conspaceCd": "20201251",
       "srResId": "12",
-      "meals": ["점심", "저녁"],
+      "meals": [
+        "점심",
+        "저녁"
+      ],
       "corners": [],
       "show": "mains"
     },
@@ -22,19 +25,35 @@
       "name": "행단골 나폴리폴리",
       "conspaceCd": "20201104",
       "srResId": "3",
-      "meals": ["점심"],
-      "corners": ["나폴리"],
-      "show": "all",
+      "meals": [
+        "점심"
+      ],
+      "corners": [
+        "나폴리"
+      ],
+      "show": "mains",
       "optional": true
     }
   ],
   "dorm_menu": {
     "name": "기숙사",
     "meals": [
-      { "name": "점심", "tab": "foodlist02", "emoji": "🌞", "skku_category": "L" },
-      { "name": "저녁", "tab": "foodlist03", "emoji": "🌙", "skku_category": "D" }
+      {
+        "name": "점심",
+        "tab": "foodlist02",
+        "emoji": "🌞",
+        "skku_category": "L"
+      },
+      {
+        "name": "저녁",
+        "tab": "foodlist03",
+        "emoji": "🌙",
+        "skku_category": "D"
+      }
     ],
-    "corners": ["공통"],
+    "corners": [
+      "공통"
+    ],
     "main_only": true
   }
 }

@@ -112,6 +112,18 @@ def find_price(text: str) -> str:
     return f"{int(digits):,}원"
 
 
+BARE_PRICE_RE = re.compile(r"^\s*(\d{1,3}(?:,\d{3})+|\d{3,6})\s*$")
+
+
+def bare_price(text: str) -> str:
+    """칸 전체가 숫자뿐일 때만 가격으로 본다: '6000' -> '6,000원'"""
+    m = BARE_PRICE_RE.match(text or "")
+    if not m:
+        return ""
+    n = int(m.group(1).replace(",", ""))
+    return f"{n:,}원" if 500 <= n <= 100000 and n % 100 == 0 else ""  # 가격은 100원 단위
+
+
 def corner_fields(cont) -> list:
     """메뉴 칸 말고 나머지 정보 칸들: [("가격", "6,000원"), ("", "..."), ...] (가격 찾기 + 로그용)"""
     fields = []
@@ -173,9 +185,11 @@ def parse(html: str, day: date, category: str) -> dict:
                 price = ""
                 for label, value in fields:
                     if "가격" in label or "금액" in label:
-                        price = find_price(value) or price
+                        price = find_price(value) or bare_price(value) or price
                 if not price:
                     price = next((find_price(v) for _, v in fields if find_price(v)), "")
+                if not price:  # 공대·행단골은 가격 칸에 "6000"처럼 숫자만 적혀 있다
+                    price = next((bare_price(v) for _, v in fields if bare_price(v)), "")
                 result["corners"].append({"corner": corner_name(cont), "sections": sections,
                                           "price": price, "fields": fields})
         break
