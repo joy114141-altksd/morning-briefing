@@ -78,10 +78,16 @@ def parse_sections(pre_text: str) -> dict:
     return sections
 
 
+HANGUL_RE = re.compile(r"[가-힣]")
+
+
 def main_item(items: list) -> str:
     for it in items:
-        if not NOT_MAIN.search(it.replace(" ", "")):
-            return ORIGIN_RE.sub("", it).strip()
+        if NOT_MAIN.search(it.replace(" ", "")):
+            continue
+        if not HANGUL_RE.search(it):
+            continue  # "Burger Day" 같은 영문 행사 이름은 메뉴가 아님
+        return ORIGIN_RE.sub("", it).strip()
     return ORIGIN_RE.sub("", items[0]).strip() if items else ""
 
 
@@ -161,4 +167,7 @@ def pick_corner_mains(parsed: dict, only_corners: list = None) -> list:
         main = main_item(items)
         if main:
             out.append((c["corner"], main))
+    # 코너 이름이 전부 같으면(예: 공대식당은 모두 "한식"으로 나옴) 이름은 빼고 메뉴만
+    if len({corner for corner, _ in out}) <= 1 and len(out) > 1:
+        out = [("", main) for _, main in out]
     return out
