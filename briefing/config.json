@@ -1,4 +1,9 @@
 {
+  "breakfast": {
+    "enabled": true,
+    "name": "행단골",
+    "emoji": "🌅"
+  },
   "dorm_menu": {
     "name": "봉룡학사",
     "meals": [
