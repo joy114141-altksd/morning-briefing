@@ -118,14 +118,15 @@ def get_breakfast(day: date, cfg: dict, html_path: str = None):
 
 
 def get_engineering(day: date, cfg: dict, meals: list, html_paths: dict):
-    """반환: {"점심": [(코너, 메인), ...] 또는 Exception, "저녁": ...}"""
+    """반환: {"점심": {"time", "items": [(코너, 메인), ...]} 또는 Exception, "저녁": ...}"""
     out = {}
     for meal in meals:
         cat = meal.get("skku_category")
         if not cat:
             continue
         parsed = read_skku(day, cat, cfg, html_paths.get(cat), label=f"{meal['name']} {cfg.get('name', '')}")
-        out[meal["name"]] = parsed if isinstance(parsed, Exception) else skku_menu.pick_corner_mains(parsed, cfg.get("corners") or None)
+        out[meal["name"]] = parsed if isinstance(parsed, Exception) else {
+            "time": parsed["time"], "items": skku_menu.pick_corner_mains(parsed, cfg.get("corners") or None)}
     return out
 
 
@@ -164,7 +165,7 @@ def build_message(day: date, config: dict, breakfast, dorm, eng) -> str:
 
     b_empty = (not use_breakfast) or (isinstance(breakfast, dict) and not breakfast["items"])
     d_empty = isinstance(dorm, dict) and not any(dorm.values())
-    e_empty = (not use_eng) or all(isinstance(v, list) and not v for v in eng.values())
+    e_empty = (not use_eng) or all(isinstance(v, dict) and not v["items"] for v in eng.values())
     if b_empty and d_empty and e_empty:
         return f"🍚 <b>{day_label(day)}</b> 오늘은 식단이 없어요"
 
@@ -194,28 +195,30 @@ def build_message(day: date, config: dict, breakfast, dorm, eng) -> str:
         lines += ["", f"{meal['emoji']} <b>{meal['name']}</b>"]
         # 기숙사
         if isinstance(dorm, Exception):
-            lines.append(f"{html_escape(dname)} · ⚠️ 확인 못함 ({html_escape(failure_reason(dorm))})")
+            lines.append(f"<b>{html_escape(dname)}</b> ⚠️ 확인 못함 ({html_escape(failure_reason(dorm))})")
         else:
             corners = dorm.get(meal["name"], [])
             if not corners:
-                lines.append(f"{html_escape(dname)} · 없음")
-            for c in corners:
-                text = dorm_menu.main_dish(c["items"]) if dcfg.get("main_only", True) else ", ".join(c["items"])
-                label = dname + (f" {c['corner']}" if len(dcfg["corners"]) > 1 else "")
-                lines.append(f"{html_escape(label)} · {html_escape(text)}")
+                lines.append(f"<b>{html_escape(dname)}</b> 없음")
+            else:
+                lines.append(f"<b>{html_escape(dname)}</b> {corners[0]['time']}".rstrip())
+                for c in corners:
+                    text = dorm_menu.main_dish(c["items"]) if dcfg.get("main_only", True) else ", ".join(c["items"])
+                    prefix = f"{c['corner']} · " if len(dcfg["corners"]) > 1 else ""
+                    lines.append(html_escape(prefix + text))
         # 공대
         if use_eng and meal["name"] in eng:
             res = eng[meal["name"]]
             if isinstance(res, Exception):
-                lines.append(f"{html_escape(ename)} · ⚠️ 확인 못함 ({html_escape(failure_reason(res))})")
+                lines.append(f"<b>{html_escape(ename)}</b> ⚠️ 확인 못함 ({html_escape(failure_reason(res))})")
                 url = skku_menu.menu_url(day, meal["skku_category"], ecfg["conspaceCd"], ecfg["srResId"])
                 links.append(f'<a href="{html_escape(url)}">{html_escape(ename)} {meal["name"]} 보기</a>')
-            elif not res:
-                lines.append(f"{html_escape(ename)} · 없음")
+            elif not res["items"]:
+                lines.append(f"<b>{html_escape(ename)}</b> 없음")
             else:
-                for corner, main in res:
-                    label = f"{ename} {corner}".strip()
-                    lines.append(f"{html_escape(label)} · {html_escape(main)}")
+                lines.append(f"<b>{html_escape(ename)}</b> {res['time']}".rstrip())
+                for corner, main in res["items"]:
+                    lines.append(html_escape(f"{corner} · {main}" if corner else main))
 
     if links:
         lines += ["", " · ".join(links)]
