@@ -1,41 +1,40 @@
 {
   "layout": [
     {
-      "title": "행단골",
-      "parts": [
+      "meal": "조식",
+      "rows": [
         {
-          "meal": "조식",
+          "label": "행단골",
           "source": "breakfast"
-        },
-        {
-          "meal": "점심",
-          "source": "나폴리폴리",
-          "note": "2층 나폴리폴리"
         }
       ]
     },
     {
-      "title": "기숙사",
-      "parts": [
+      "meal": "점심",
+      "rows": [
         {
-          "meal": "점심",
+          "label": "기숙사",
           "source": "dorm"
         },
         {
-          "meal": "저녁",
-          "source": "dorm"
-        }
-      ]
-    },
-    {
-      "title": "공대식당",
-      "parts": [
+          "label": "나폴리",
+          "source": "나폴리폴리"
+        },
         {
-          "meal": "점심",
+          "label": "공대",
           "source": "공대"
+        }
+      ]
+    },
+    {
+      "meal": "저녁",
+      "rows": [
+        {
+          "label": "기숙사",
+          "source": "dorm"
         },
         {
-          "meal": "저녁",
+          "label": "공대",
           "source": "공대"
         }
       ]
@@ -60,7 +59,8 @@
       ],
       "corners": [],
       "show": "mains",
-      "min_price": 4500
+      "min_price": 4500,
+      "drop_unpriced": true
     },
     {
       "enabled": true,
