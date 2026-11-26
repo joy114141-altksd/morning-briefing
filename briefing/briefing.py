@@ -18,9 +18,9 @@ GitHub Actions 에서 실행된다 (cron-job.org 가 평일 07:00 KST 에 workfl
                                                # 저장해둔 페이지로 점검 (접속 없이)
 
 받게 되는 메시지:
-    🍚 오늘의 식단 (조식·점심·저녁)
-    🍚 오늘은 식단이 없어요            (공휴일 등 모든 식단이 비어 있는 날)
-    ⚠️ 확인 못함 + 식단표 링크          (학교 서버 접속 실패, 페이지 구조 변경)
+    날짜 + 조식·점심·저녁 한 줄씩 + 점심·저녁 운영시간
+    "오늘은 식단이 없어요"            (공휴일 등 모든 식단이 비어 있는 날)
+    '?' + 맨 아래 식단표 링크          (학교 서버 접속 실패, 페이지 구조 변경)
 """
 
 import argparse
@@ -41,7 +41,6 @@ CONFIG_PATH = BASE_DIR / "config.json"
 
 KST = timezone(timedelta(hours=9))
 WEEKDAYS = "월화수목금토일"
-MEAL_EMOJI = {"조식": "🌅", "점심": "🌞", "저녁": "🌙"}
 
 
 def log(message: str) -> None:
@@ -284,17 +283,17 @@ def short_time(t: str) -> str:
 
 def build_message(day: date, config: dict, breakfast, dorm, restaurants) -> str:
     """
-    🍚 11/26 (목)
+    11/26 (목)
 
-    🌅 참치김치찌개, 제육컵밥 1.0
-    🌞 사골떡만둣국 / 뚝배기나가사키만두전골 매콤불고기비빔밥 고구마치즈돈까스 6.8 / 뼈해장국 7.5
-    🌙 돼지불고기 / 돈치마요덮밥
+    참치김치찌개, 제육컵밥 1.0
+    사골떡만둣국 / 뚝배기나가사키만두전골 매콤불고기비빔밥 고구마치즈돈까스 6.8 / 뼈해장국 7.5
+    돼지불고기 / 돈치마요덮밥
 
-    🌅 8-9
-    🌞 11:30-13 / 11-13:30 / 11-13:30
-    🌙 17:30-18:30 / 17-18:20
+    11:30-13 / 11-13:30
+    17:30-18:30 / 17-18:20
 
-    끼니마다 한 줄, 식당은 layout 순서대로 ' / ' 로 구분 (메뉴 없음 '-', 확인 실패 '⚠️').
+    끼니마다 한 줄(조식·점심·저녁), 식당은 layout 순서대로 ' / ' 로 구분 (메뉴 없음 '-', 확인 실패 '?').
+    아래는 같은 순서의 운영시간 (조식은 빼고, 이웃한 같은 시간은 하나로).
     """
     dcfg = config["dorm_menu"]
     restaurants = restaurants or []
@@ -303,7 +302,6 @@ def build_message(day: date, config: dict, breakfast, dorm, restaurants) -> str:
     menu_lines, time_lines, links, seen_urls = [], [], [], set()
     any_menu = False
     for meal in config["layout"]:
-        emoji = MEAL_EMOJI.get(meal["meal"], meal["meal"])
         segs, tsegs = [], []
         for row in meal["rows"]:
             part = {"meal": meal["meal"], "source": row["source"]}
@@ -311,7 +309,7 @@ def build_message(day: date, config: dict, breakfast, dorm, restaurants) -> str:
             if res is None:
                 continue  # 메뉴 없는 날 숨기는 식당(나폴리폴리)
             if isinstance(res, Exception):
-                segs.append("⚠️")
+                segs.append("?")
                 tsegs.append("-")
                 url = part_link(part, day, config, restaurants)
                 if url and url not in seen_urls:  # 같은 식단표(기숙사 점심·저녁)는 링크 하나만
@@ -347,15 +345,20 @@ def build_message(day: date, config: dict, breakfast, dorm, restaurants) -> str:
                 text = joiner.join(parts)
             segs.append(text)
         if segs:
-            menu_lines.append(f"{emoji} " + html_escape(" / ".join(segs)))
-            time_lines.append(f"{emoji} " + html_escape(" / ".join(tsegs)))
+            menu_lines.append(html_escape(" / ".join(segs)))
+            if meal.get("show_time", True):
+                merged = []
+                for t in tsegs:  # 이웃한 같은 시간은 하나로 (공대·나폴리 11-13:30)
+                    if not (merged and merged[-1] == t and t != "-"):
+                        merged.append(t)
+                time_lines.append(html_escape(" / ".join(merged)))
 
     if not any_menu:
-        return f"🍚 <b>{day_label(day)}</b> 오늘은 식단이 없어요"
+        return f"<b>{day_label(day)}</b> 오늘은 식단이 없어요"
 
-    lines = [f"🍚 <b>{day_label(day)}</b>", ""] + menu_lines
+    lines = [f"<b>{day_label(day)}</b>", ""] + menu_lines
     if any(t.strip("-/ ") for t in time_lines):
-        lines += [""] + [f"<i>{t}</i>" for t in time_lines]
+        lines += [""] + time_lines
     if links:
         lines += ["", "링크: " + " · ".join(links)]
     return "\n".join(lines)

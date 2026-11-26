@@ -8,7 +8,8 @@
           "source": "breakfast",
           "join": ", "
         }
-      ]
+      ],
+      "show_time": false
     },
     {
       "meal": "점심",
