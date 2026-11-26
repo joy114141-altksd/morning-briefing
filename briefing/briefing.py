@@ -188,93 +188,95 @@ def item_line(name: str, price: str = "") -> str:
     return f"{text} · {html_escape(price)}" if price else text
 
 
-def place_head(emoji: str, name: str, time_str: str = "") -> str:
-    """🏠 기숙사  11:30~13:00"""
-    head = f"{emoji} <b>{html_escape(name)}</b>".strip()
-    return f"{head}  <i>{html_escape(time_str)}</i>" if time_str else head
+def part_result(part: dict, breakfast, dorm, restaurants: list, dcfg: dict):
+    """
+    layout 의 한 칸(식당의 한 끼)을 같은 모양으로:
+      Exception                      : 확인 실패
+      None                           : 안 보여줌 (optional 식당에 그날 메뉴가 없을 때)
+      {"time", "items": [(이름, 가격)]} : 보여줄 메뉴 (items 가 비면 '없음')
+    """
+    src, meal = part["source"], part["meal"]
+    if src == "breakfast":
+        if breakfast is None:
+            return None
+        if isinstance(breakfast, Exception):
+            return breakfast
+        return {"time": breakfast["time"], "items": breakfast["items"]}
+    if src == "dorm":
+        if isinstance(dorm, Exception):
+            return dorm
+        corners = dorm.get(meal, [])
+        items = []
+        for c in corners:
+            text = dorm_menu.main_dish(c["items"]) if dcfg.get("main_only", True) else ", ".join(c["items"])
+            items.append(((f"{c['corner']} " if len(dcfg["corners"]) > 1 else "") + text, ""))
+        return {"time": corners[0]["time"] if corners else "", "items": items}
+    for r in restaurants:
+        if r["cfg"]["name"] != src or meal not in r["meals"]:
+            continue
+        res = r["meals"][meal]
+        if isinstance(res, Exception):
+            return res
+        if not res["items"] and r["cfg"].get("optional"):
+            return None
+        return {"time": res["time"],
+                "items": [((f"{corner} {name}" if corner else name), price) for corner, name, price in res["items"]]}
+    return None  # 꺼져 있는 식당
 
 
-def meal_head(emoji: str, name: str) -> str:
-    return f"━━━ {emoji} <b>{html_escape(name)}</b> ━━━"
+def part_link(part: dict, day: date, config: dict, restaurants: list) -> str:
+    """확인 실패한 칸에 붙일 식단표 링크"""
+    src, meal = part["source"], part["meal"]
+    if src == "dorm":
+        return dorm_menu.PAGE_URL
+    cat = {"조식": "B", "점심": "L", "저녁": "D"}.get(meal, "L")
+    cfg = config.get("breakfast", {}) if src == "breakfast" else next(
+        (r["cfg"] for r in restaurants if r["cfg"]["name"] == src), None)
+    if not cfg:
+        return ""
+    return skku_menu.menu_url(day, cat, cfg["conspaceCd"], cfg["srResId"])
 
 
 def build_message(day: date, config: dict, breakfast, dorm, restaurants) -> str:
-    bcfg, dcfg = config.get("breakfast", {}), config["dorm_menu"]
-    use_breakfast = bcfg.get("enabled", True)
+    dcfg = config["dorm_menu"]
     restaurants = restaurants or []
 
-    b_empty = (not use_breakfast) or (isinstance(breakfast, dict) and not breakfast["items"])
-    d_empty = isinstance(dorm, dict) and not any(dorm.values())
-    r_empty = all(isinstance(v, dict) and not v["items"] for r in restaurants for v in r["meals"].values())
-    if b_empty and d_empty and r_empty:
-        return f"🍚 <b>{day_label(day)}</b> 오늘은 식단이 없어요"
+    # 식당별 묶음: config.json 의 layout 순서대로
+    sections, any_menu, links, seen_urls = [], False, [], set()
+    for place in config["layout"]:
+        block = []
+        for part in place["parts"]:
+            res = part_result(part, breakfast, dorm, restaurants, dcfg)
+            if res is None:
+                continue
+            label = part["meal"] + (f" ({part['note']})" if part.get("note") else "")
+            if isinstance(res, Exception):
+                block += [f"<b>{html_escape(label)}</b>",
+                          f"⚠️ 확인 못함 ({html_escape(failure_reason(res))})"]
+                url = part_link(part, day, config, restaurants)
+                if url and url not in seen_urls:  # 같은 식단표(기숙사 점심·저녁)는 링크 하나만
+                    seen_urls.add(url)
+                    name = place["title"] if part["source"] == "dorm" else f'{place["title"]} {part["meal"]}'
+                    links.append(f'<a href="{html_escape(url)}">{html_escape(name)}</a>')
+                any_menu = True
+            elif not res["items"]:
+                block += [f"<b>{html_escape(label)}</b>", "없음"]
+            else:
+                time_str = f"  <i>{html_escape(res['time'])}</i>" if res["time"] else ""
+                block.append(f"<b>{html_escape(label)}</b>{time_str}")
+                block += [item_line(name, price) for name, price in res["items"]]
+                any_menu = True
+        if block:
+            sections.append([f"<b>[{html_escape(place['title'])}]</b>"] + block)
+
+    if not any_menu:
+        return f"<b>{day_label(day)}</b> 오늘은 식단이 없어요"
 
     lines = [f"🍚 <b>{day_label(day)} 오늘의 식단</b>"]
-    links = []
-
-    def warn(err):
-        return f"⚠️ 확인 못함 ({html_escape(failure_reason(err))})"
-
-    # 조식
-    if use_breakfast:
-        bname, bemoji = bcfg.get("name", "행단골"), bcfg.get("place_emoji", "🍙")
-        lines += ["", meal_head(bcfg.get("emoji", "🌅"), "조식")]
-        if isinstance(breakfast, Exception):
-            lines += [place_head(bemoji, bname), warn(breakfast)]
-            url = skku_menu.menu_url(day, "B", bcfg["conspaceCd"], bcfg["srResId"])
-            links.append(f'<a href="{html_escape(url)}">{html_escape(bname)} 조식</a>')
-        elif not breakfast["items"]:
-            lines += [place_head(bemoji, bname), "없음"]
-        else:
-            lines.append(place_head(bemoji, bname, breakfast["time"]))
-            lines += [item_line(name, price) for name, price in breakfast["items"]]
-
-    # 점심·저녁: 식당마다 한 덩어리, 덩어리 사이 빈 줄
-    dname, demoji = dcfg.get("name", "기숙사"), dcfg.get("place_emoji", "🏠")
-    if isinstance(dorm, Exception):
-        links.append(f'<a href="{dorm_menu.PAGE_URL}">{html_escape(dname)} 식단표</a>')
-    for meal in dcfg["meals"]:
-        blocks = []
-        # 기숙사 (사이트에 공통 코너 가격이 없어 가격 없음)
-        if isinstance(dorm, Exception):
-            blocks.append([place_head(demoji, dname), warn(dorm)])
-        else:
-            corners = dorm.get(meal["name"], [])
-            if not corners:
-                blocks.append([place_head(demoji, dname), "없음"])
-            else:
-                block = [place_head(demoji, dname, corners[0]["time"])]
-                for c in corners:
-                    text = dorm_menu.main_dish(c["items"]) if dcfg.get("main_only", True) else ", ".join(c["items"])
-                    block.append(item_line((f"{c['corner']} " if len(dcfg["corners"]) > 1 else "") + text))
-                blocks.append(block)
-        # 학교 식당들
-        for r in restaurants:
-            if meal["name"] not in r["meals"]:
-                continue
-            rcfg, res = r["cfg"], r["meals"][meal["name"]]
-            rname, remoji = rcfg["name"], rcfg.get("place_emoji", "🍽")
-            if isinstance(res, Exception):
-                blocks.append([place_head(remoji, rname), warn(res)])
-                url = skku_menu.menu_url(day, meal["skku_category"], rcfg["conspaceCd"], rcfg["srResId"])
-                links.append(f'<a href="{html_escape(url)}">{html_escape(rname)} {meal["name"]}</a>')
-            elif not res["items"]:
-                if not rcfg.get("optional"):  # optional: 메뉴가 있을 때만 표시
-                    blocks.append([place_head(remoji, rname), "없음"])
-            else:
-                block = [place_head(remoji, rname, res["time"])]
-                for corner, name, price in res["items"]:
-                    block.append(item_line(f"{corner} {name}" if corner else name, price))
-                blocks.append(block)
-
-        lines += ["", meal_head(meal["emoji"], meal["name"])]
-        for i, block in enumerate(blocks):
-            if i:
-                lines.append("")
-            lines += block
-
+    for sec in sections:
+        lines += [""] + sec
     if links:
-        lines += ["", "🔗 " + " · ".join(links)]
+        lines += ["", "링크: " + " · ".join(links)]
     return "\n".join(lines)
 
 
