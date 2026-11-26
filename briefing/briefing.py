@@ -41,6 +41,7 @@ CONFIG_PATH = BASE_DIR / "config.json"
 
 KST = timezone(timedelta(hours=9))
 WEEKDAYS = "월화수목금토일"
+MEAL_EMOJI = {"조식": "🌅", "점심": "🌞", "저녁": "🌙"}
 
 
 def log(message: str) -> None:
@@ -249,7 +250,8 @@ def build_message(day: date, config: dict, breakfast, dorm, restaurants) -> str:
             res = part_result(part, breakfast, dorm, restaurants, dcfg)
             if res is None:
                 continue
-            label = part["meal"] + (f" ({part['note']})" if part.get("note") else "")
+            emoji = MEAL_EMOJI.get(part["meal"], "")
+            label = (f"{emoji} " if emoji else "") + part["meal"] + (f" ({part['note']})" if part.get("note") else "")
             if isinstance(res, Exception):
                 block += [f"<b>{html_escape(label)}</b>",
                           f"⚠️ 확인 못함 ({html_escape(failure_reason(res))})"]
