@@ -65,7 +65,7 @@ morning-briefing/
 | ↳ `drop_unpriced` | `true`면 가격이 안 적힌 메뉴(버거 데이 등)도 뺍니다 |
 | `dorm_menu.corners` | 보낼 기숙사 코너 이름. 예: `["공통", "신관"]` (2개 이상이면 메뉴 앞에 `[코너]` 표시) |
 | `main_only` | `true`면 메인 메뉴 하나만, `false`면 반찬까지 전부 |
-| `meals` | 보낼 끼니. 아침을 넣으려면 `{ "name": "아침", "tab": "foodlist01", "emoji": "🌅" }` 추가 |
+| `meals` | 보낼 끼니. 기숙사 아침을 넣으려면 `{ "name": "아침", "tab": "foodlist01" }` 추가 |
 
 ## 실행 시각
 
