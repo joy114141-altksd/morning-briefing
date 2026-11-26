@@ -4,9 +4,9 @@
       "meal": "조식",
       "rows": [
         {
-          "label": "",
+          "name": "행단골",
           "source": "breakfast",
-          "time_label": "행단골"
+          "join": ", "
         }
       ]
     },
@@ -14,16 +14,16 @@
       "meal": "점심",
       "rows": [
         {
-          "label": "기숙사",
+          "name": "기숙사",
           "source": "dorm"
         },
         {
-          "label": "나폴리",
-          "source": "나폴리폴리"
+          "name": "공대",
+          "source": "공대"
         },
         {
-          "label": "공대",
-          "source": "공대"
+          "name": "나폴리",
+          "source": "나폴리폴리"
         }
       ]
     },
@@ -31,19 +31,16 @@
       "meal": "저녁",
       "rows": [
         {
-          "label": "기숙사",
+          "name": "기숙사",
           "source": "dorm"
         },
         {
-          "label": "공대",
+          "name": "공대",
           "source": "공대"
         }
       ]
     }
   ],
-  "display": {
-    "menu_width": 18
-  },
   "breakfast": {
     "enabled": true,
     "name": "행단골",
@@ -64,7 +61,8 @@
       "corners": [],
       "show": "mains",
       "min_price": 4500,
-      "drop_unpriced": true
+      "drop_unpriced": true,
+      "default_price": "6,000원"
     },
     {
       "enabled": true,

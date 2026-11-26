@@ -270,89 +270,92 @@ def part_link(part: dict, day: date, config: dict, restaurants: list) -> str:
     return skku_menu.menu_url(day, cat, cfg["conspaceCd"], cfg["srResId"])
 
 
+def short_time(t: str) -> str:
+    """'11:30~13:00' -> '11:30-13',  '08:00~09:00' -> '8-9'"""
+    def one(x):
+        h, _, m = x.strip().partition(":")
+        h = str(int(h)) if h.isdigit() else h
+        return h if m in ("", "00") else f"{h}:{m}"
+    if "~" not in t:
+        return t
+    a, b = t.split("~", 1)
+    return f"{one(a)}-{one(b)}"
+
+
 def build_message(day: date, config: dict, breakfast, dorm, restaurants) -> str:
     """
-    🌅 조식
-    참치김치찌개, 제육컵밥 1.0
+    🍚 11/26 (목)
 
-    🌞 점심
-    기숙사  사골떡만둣국
-    공대　  뚝배기나가사키만두전골 6.0,     <- 한 줄을 넘으면
-    　　　  매콤불고기비빔밥 6.0              <- 메뉴 시작 위치에 맞춰 다음 줄 (내어쓰기)
+    🌅 참치김치찌개, 제육컵밥 1.0
+    🌞 사골떡만둣국 / 뚝배기나가사키만두전골 매콤불고기비빔밥 고구마치즈돈까스 6.8 / 뼈해장국 7.5
+    🌙 돼지불고기 / 돈치마요덮밥
 
-    운영시간
-    행단골  조식 08:00~09:00
-    ...
+    🌅 8-9
+    🌞 11:30-13 / 11-13:30 / 11-13:30
+    🌙 17:30-18:30 / 17-18:20
+
+    끼니마다 한 줄, 식당은 layout 순서대로 ' / ' 로 구분 (메뉴 없음 '-', 확인 실패 '⚠️').
     """
     dcfg = config["dorm_menu"]
     restaurants = restaurants or []
-    display = config.get("display", {})
-    menu_width = display.get("menu_width", 18)  # 메뉴 칸 폭 (한글 글자 수 기준)
-    width = max((len(row["label"]) for m in config["layout"] for row in m["rows"] if row["label"]), default=3)
-    gap = "  "
+    rcfg_by_name = {r["cfg"]["name"]: r["cfg"] for r in restaurants}
 
-    def rows_with_name(label: str, pieces: list, full_width: bool = False) -> list:
-        """식당 이름 + 메뉴들 (넘치면 메뉴 칸에 맞춰 다음 줄)"""
-        if label:
-            head, blank = name_col(label, width) + gap, PAD * width + gap
-            lines = pack_lines(pieces, menu_width)
-        else:
-            head = blank = ""
-            lines = pack_lines(pieces, menu_width + width + 1)
-        return [(head if i == 0 else blank) + html_escape(t) for i, t in enumerate(lines)]
-
-    sections, any_menu, links, seen_urls = [], False, [], set()
-    times = {}  # 운영시간: {식당 이름: [(끼니, 시간), ...]}  (나온 순서대로)
+    menu_lines, time_lines, links, seen_urls = [], [], [], set()
+    any_menu = False
     for meal in config["layout"]:
-        block = []
+        emoji = MEAL_EMOJI.get(meal["meal"], meal["meal"])
+        segs, tsegs = [], []
         for row in meal["rows"]:
             part = {"meal": meal["meal"], "source": row["source"]}
             res = part_result(part, breakfast, dorm, restaurants, dcfg)
             if res is None:
-                continue
-            label = row["label"]
-            prefix = (name_col(label, width) + gap) if label else ""
+                continue  # 메뉴 없는 날 숨기는 식당(나폴리폴리)
             if isinstance(res, Exception):
-                block.append(f"{prefix}⚠️ 확인 못함 ({html_escape(failure_reason(res))})")
+                segs.append("⚠️")
+                tsegs.append("-")
                 url = part_link(part, day, config, restaurants)
                 if url and url not in seen_urls:  # 같은 식단표(기숙사 점심·저녁)는 링크 하나만
                     seen_urls.add(url)
-                    name = (label or row.get("time_label", "")) if row["source"] == "dorm" \
-                        else f'{label or row.get("time_label", "")} {meal["meal"]}'.strip()
+                    name = row.get("name", row["source"])
+                    if row["source"] != "dorm":
+                        name = f"{name} {meal['meal']}"
                     links.append(f'<a href="{html_escape(url)}">{html_escape(name)}</a>')
                 any_menu = True
                 continue
             if not res["items"]:
-                block.append(f"{prefix}없음")
+                segs.append("-")
+                tsegs.append("-")
                 continue
             any_menu = True
-            if res.get("time"):
-                times.setdefault(row.get("time_label") or label, []).append((meal["meal"], res["time"]))
+            tsegs.append(short_time(res.get("time", "")) or "-")
+
+            # 기본 가격(공대 6,000원)과 같으면 가격 생략
+            default = price_value(rcfg_by_name.get(row["source"], {}).get("default_price", "")) \
+                if row["source"] not in ("breakfast", "dorm") else 0
             items = res["items"]
+            joiner = row.get("join", " ")
             prices = {short_price(p) for _, p in items}
-            if len(items) > 1 and len(prices) == 1:
-                # 가격이 모두 같으면(천원 조식 등) 가격은 맨 끝에 한 번
+            if len(items) > 1 and len(prices) == 1 and not default:
+                # 가격이 모두 같으면(천원 조식) 가격은 맨 끝에 한 번
                 price = prices.pop()
-                pieces = [n for n, _ in items]
-                if price:
-                    pieces[-1] = f"{pieces[-1]} {price}"
+                text = joiner.join(n for n, _ in items) + (f" {price}" if price else "")
             else:
-                pieces = [f"{n} {short_price(p)}".strip() for n, p in items]
-            block += rows_with_name(label, pieces)
-        if block:
-            emoji = MEAL_EMOJI.get(meal["meal"], "")
-            sections.append([f"{emoji} <b>{html_escape(meal['meal'])}</b>".strip()] + block)
+                parts = []
+                for n, p in items:
+                    sp = "" if (default and price_value(p) == default) else short_price(p)
+                    parts.append(f"{n} {sp}".strip())
+                text = joiner.join(parts)
+            segs.append(text)
+        if segs:
+            menu_lines.append(f"{emoji} " + html_escape(" / ".join(segs)))
+            time_lines.append(f"{emoji} " + html_escape(" / ".join(tsegs)))
 
     if not any_menu:
         return f"🍚 <b>{day_label(day)}</b> 오늘은 식단이 없어요"
 
-    lines = [f"🍚 <b>{day_label(day)}</b>"]
-    for sec in sections:
-        lines += [""] + sec
-    if times:
-        lines += ["", "<b>운영시간</b>"]
-        for place, meal_times in times.items():
-            lines += rows_with_name(place, [f"{m} {t}" for m, t in meal_times])
+    lines = [f"🍚 <b>{day_label(day)}</b>", ""] + menu_lines
+    if any(t.strip("-/ ") for t in time_lines):
+        lines += [""] + [f"<i>{t}</i>" for t in time_lines]
     if links:
         lines += ["", "링크: " + " · ".join(links)]
     return "\n".join(lines)
