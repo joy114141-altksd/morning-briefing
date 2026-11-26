@@ -4,6 +4,7 @@
 
 - 조식: 행단골식당 천원의 아침밥 (일반식 메인 1개 + 컵밥 1개)
 - 점심·저녁: 기숙사(봉룡학사) 공통 코너 메인 메뉴 + 공대식당(해오름) 코너별 메인 메뉴 전부 + 행단골 2층 나폴리폴리(메뉴 있는 날만)
+- 공대식당의 4,500원 미만 메뉴(치킨텐더 등 사이드)는 뺍니다
 - 학교 홈페이지에 가격이 있으면 메뉴 옆에 가격 (기숙사 공통 코너는 사이트에 가격이 없음)
 
 ## 구조
@@ -24,24 +25,31 @@ morning-briefing/
 ## 받게 되는 메시지
 
 ```
-🍚 11/25 (수) 오늘의 식단
+🍚 11/26 (목) 오늘의 식단
 
-🌅 조식 08:00~09:00 · 행단골
-꼬치어묵&물떡탕
-떡갈비데리야끼컵밥
+━━━ 🌅 조식 ━━━
+🍙 행단골  08:00~09:00
+• 참치김치찌개 · 1,000원
+• 제육컵밥 · 1,000원
 
-🌞 점심
-기숙사 11:30~13:00
-부대햄김치덮밥
-공대 11:00~13:30
-한식 · 제육볶음
-일품 · 치킨마요덮밥
+━━━ 🌞 점심 ━━━
+🏠 기숙사  11:30~13:00
+• 사골떡만둣국
 
-🌙 저녁
-기숙사 17:30~18:30
-치킨마요덮밥
-공대 17:00~18:20
-한식 · 닭갈비
+🔧 공대  11:00~13:30
+• 뚝배기나가사키만두전골 · 6,000원
+• 매콤불고기비빔밥 · 6,000원
+• 고구마치즈돈까스 · 6,800원
+
+🍝 나폴리폴리  11:00~13:30
+• 뼈해장국 · 7,500원
+
+━━━ 🌙 저녁 ━━━
+🏠 기숙사  17:30~18:30
+• 돼지불고기
+
+🔧 공대  17:00~18:20
+• 돈치마요덮밥 · 6,000원
 ```
 
 - 조식은 천원의 아침밥 **일반식의 첫 요리**(밥·김치 제외)와 **컵밥**, 2개를 보냅니다.
@@ -64,6 +72,8 @@ morning-briefing/
 | ↳ `corners` | 비워두면 코너 전부, `["나폴리"]`처럼 적으면 이름에 그 글자가 들어간 코너만 |
 | ↳ `show` | `mains`: 코너마다 메인 1개, `all`: 코너의 메뉴 전부 |
 | ↳ `optional` | `true`면 메뉴가 없는 날 그 식당 줄을 아예 안 보여줍니다 |
+| ↳ `min_price` | 이 가격보다 싼 메뉴는 사이드로 보고 뺍니다 (공대 `4500`) |
+| ↳ `place_emoji` | 식당 이름 앞 이모지 |
 | `dorm_menu.corners` | 보낼 기숙사 코너 이름. 예: `["공통", "신관"]` (2개 이상이면 메뉴 앞에 `[코너]` 표시) |
 | `main_only` | `true`면 메인 메뉴 하나만, `false`면 반찬까지 전부 |
 | `meals` | 보낼 끼니. 아침을 넣으려면 `{ "name": "아침", "tab": "foodlist01", "emoji": "🌅" }` 추가 |
@@ -92,7 +102,7 @@ GitHub 토큰은 이 저장소에 **Actions: Read and write** 권한이 있어�
 - Actions → Morning Briefing → Run workflow: `date`를 비우면 오늘 식단, 날짜를 넣으면 그날 식단을 보냅니다.
 - 내 컴퓨터에서: `cd briefing && python briefing.py --dry-run` (전송 없이 메시지만 출력)
 - 접속 없이 샘플로 (`briefing` 폴더에서):
-  `python briefing.py --date 2026-11-25 --dry-run --html tests/sample_2026-11-25.html --skku-html B=tests/sample_skku_haengdan_B_2026-11-26.html --skku-html 공대:L=tests/sample_skku_haeorum_L_2026-11-26.html --skku-html 공대:D=tests/sample_skku_haeorum_D_2026-11-26.html --skku-html "행단골 나폴리폴리:L=tests/sample_skku_haengdan_L_2026-11-26.html"`
+  `python briefing.py --date 2026-11-25 --dry-run --html tests/sample_2026-11-25.html --skku-html B=tests/sample_skku_haengdan_B_2026-11-26.html --skku-html 공대:L=tests/sample_skku_haeorum_L_2026-11-26.html --skku-html 공대:D=tests/sample_skku_haeorum_D_2026-11-26.html --skku-html 나폴리폴리:L=tests/sample_skku_haengdan_L_2026-11-26.html`
   (해오름·행단골 중식 샘플은 실제 저장본이 아니라 같은 틀로 만든 가상 페이지입니다)
 
 ## Secrets 설정

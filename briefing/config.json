@@ -5,7 +5,8 @@
     "conspaceCd": "20201104",
     "srResId": "3",
     "default_price": "1,000원",
-    "emoji": "🌅"
+    "emoji": "🌅",
+    "place_emoji": "🍙"
   },
   "restaurants": [
     {
@@ -18,11 +19,13 @@
         "저녁"
       ],
       "corners": [],
-      "show": "mains"
+      "show": "mains",
+      "place_emoji": "🔧",
+      "min_price": 4500
     },
     {
       "enabled": true,
-      "name": "행단골 나폴리폴리",
+      "name": "나폴리폴리",
       "conspaceCd": "20201104",
       "srResId": "3",
       "meals": [
@@ -32,7 +35,8 @@
         "나폴리"
       ],
       "show": "mains",
-      "optional": true
+      "optional": true,
+      "place_emoji": "🍝"
     }
   ],
   "dorm_menu": {
@@ -54,6 +58,7 @@
     "corners": [
       "공통"
     ],
-    "main_only": true
+    "main_only": true,
+    "place_emoji": "🏠"
   }
 }
