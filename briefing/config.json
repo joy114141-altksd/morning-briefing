@@ -4,8 +4,9 @@
       "meal": "조식",
       "rows": [
         {
-          "label": "행단골",
-          "source": "breakfast"
+          "label": "",
+          "source": "breakfast",
+          "time_label": "행단골"
         }
       ]
     },
@@ -40,6 +41,9 @@
       ]
     }
   ],
+  "display": {
+    "menu_width": 18
+  },
   "breakfast": {
     "enabled": true,
     "name": "행단골",

@@ -196,6 +196,26 @@ def short_price(price: str) -> str:
     return f"{n / 1000:.1f}" if n % 100 == 0 else f"{n / 1000:.2f}"
 
 
+def visual_len(text: str) -> float:
+    """폰 화면에서 차지하는 대략적인 폭 (한글 1, 영문·숫자·기호 약 0.55)"""
+    return sum(1.0 if ord(ch) >= 0x1100 else 0.55 for ch in text)
+
+
+def pack_lines(pieces: list, max_width: float) -> list:
+    """메뉴들을 쉼표로 잇되, 한 줄이 max_width 를 넘으면 다음 줄로 (줄 끝에 쉼표)"""
+    lines, cur = [], ""
+    for piece in pieces:
+        cand = f"{cur}, {piece}" if cur else piece
+        if cur and visual_len(cand) > max_width:
+            lines.append(cur + ",")
+            cur = piece
+        else:
+            cur = cand
+    if cur:
+        lines.append(cur)
+    return lines
+
+
 def name_col(label: str, width: int) -> str:
     """식당 이름을 같은 폭으로: '공대' -> '공대\u3000' (width=3)"""
     return html_escape(label) + PAD * max(0, width - len(label))
@@ -253,19 +273,36 @@ def part_link(part: dict, day: date, config: dict, restaurants: list) -> str:
 def build_message(day: date, config: dict, breakfast, dorm, restaurants) -> str:
     """
     🌅 조식
-    행단골  참치김치찌개, 제육컵밥 1.0
+    참치김치찌개, 제육컵밥 1.0
 
     🌞 점심
     기숙사  사골떡만둣국
-    공대　  뚝배기나가사키만두전골 6.0
-    　　　  매콤불고기비빔밥 6.0
+    공대　  뚝배기나가사키만두전골 6.0,     <- 한 줄을 넘으면
+    　　　  매콤불고기비빔밥 6.0              <- 메뉴 시작 위치에 맞춰 다음 줄 (내어쓰기)
+
+    운영시간
+    행단골  조식 08:00~09:00
+    ...
     """
     dcfg = config["dorm_menu"]
     restaurants = restaurants or []
-    width = max((len(row["label"]) for m in config["layout"] for row in m["rows"]), default=3)
+    display = config.get("display", {})
+    menu_width = display.get("menu_width", 18)  # 메뉴 칸 폭 (한글 글자 수 기준)
+    width = max((len(row["label"]) for m in config["layout"] for row in m["rows"] if row["label"]), default=3)
     gap = "  "
 
+    def rows_with_name(label: str, pieces: list, full_width: bool = False) -> list:
+        """식당 이름 + 메뉴들 (넘치면 메뉴 칸에 맞춰 다음 줄)"""
+        if label:
+            head, blank = name_col(label, width) + gap, PAD * width + gap
+            lines = pack_lines(pieces, menu_width)
+        else:
+            head = blank = ""
+            lines = pack_lines(pieces, menu_width + width + 1)
+        return [(head if i == 0 else blank) + html_escape(t) for i, t in enumerate(lines)]
+
     sections, any_menu, links, seen_urls = [], False, [], set()
+    times = {}  # 운영시간: {식당 이름: [(끼니, 시간), ...]}  (나온 순서대로)
     for meal in config["layout"]:
         block = []
         for row in meal["rows"]:
@@ -273,32 +310,35 @@ def build_message(day: date, config: dict, breakfast, dorm, restaurants) -> str:
             res = part_result(part, breakfast, dorm, restaurants, dcfg)
             if res is None:
                 continue
-            head = name_col(row["label"], width) + gap
-            blank = PAD * width + gap
+            label = row["label"]
+            prefix = (name_col(label, width) + gap) if label else ""
             if isinstance(res, Exception):
-                block.append(f"{head}⚠️ 확인 못함 ({html_escape(failure_reason(res))})")
+                block.append(f"{prefix}⚠️ 확인 못함 ({html_escape(failure_reason(res))})")
                 url = part_link(part, day, config, restaurants)
                 if url and url not in seen_urls:  # 같은 식단표(기숙사 점심·저녁)는 링크 하나만
                     seen_urls.add(url)
-                    name = row["label"] if row["source"] == "dorm" else f'{row["label"]} {meal["meal"]}'
+                    name = (label or row.get("time_label", "")) if row["source"] == "dorm" \
+                        else f'{label or row.get("time_label", "")} {meal["meal"]}'.strip()
                     links.append(f'<a href="{html_escape(url)}">{html_escape(name)}</a>')
                 any_menu = True
                 continue
             if not res["items"]:
-                block.append(f"{head}없음")
+                block.append(f"{prefix}없음")
                 continue
             any_menu = True
+            if res.get("time"):
+                times.setdefault(row.get("time_label") or label, []).append((meal["meal"], res["time"]))
             items = res["items"]
             prices = {short_price(p) for _, p in items}
-            if len(items) <= 2 and len(prices) == 1:
-                # 가격이 같으면(천원 조식 등) 한 줄에, 가격은 끝에 한 번
+            if len(items) > 1 and len(prices) == 1:
+                # 가격이 모두 같으면(천원 조식 등) 가격은 맨 끝에 한 번
                 price = prices.pop()
-                text = ", ".join(html_escape(n) for n, _ in items) + (f" {price}" if price else "")
-                block.append(head + text)
+                pieces = [n for n, _ in items]
+                if price:
+                    pieces[-1] = f"{pieces[-1]} {price}"
             else:
-                for i, (n, p) in enumerate(items):
-                    sp = short_price(p)
-                    block.append((head if i == 0 else blank) + html_escape(n) + (f" {sp}" if sp else ""))
+                pieces = [f"{n} {short_price(p)}".strip() for n, p in items]
+            block += rows_with_name(label, pieces)
         if block:
             emoji = MEAL_EMOJI.get(meal["meal"], "")
             sections.append([f"{emoji} <b>{html_escape(meal['meal'])}</b>".strip()] + block)
@@ -309,6 +349,10 @@ def build_message(day: date, config: dict, breakfast, dorm, restaurants) -> str:
     lines = [f"🍚 <b>{day_label(day)}</b>"]
     for sec in sections:
         lines += [""] + sec
+    if times:
+        lines += ["", "<b>운영시간</b>"]
+        for place, meal_times in times.items():
+            lines += rows_with_name(place, [f"{m} {t}" for m, t in meal_times])
     if links:
         lines += ["", "링크: " + " · ".join(links)]
     return "\n".join(lines)
