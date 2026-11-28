@@ -34,8 +34,7 @@ SECTIONS = [  # 넓은 분야 → 좁은 분야 순서 (GUIDE.md)
     ("logic", "⚙️ 로직·파운드리"),
     ("packaging", "📦 패키징"),
 ]
-MAX_PER_SECTION = 3
-MAX_ITEMS = 8
+MAX_ITEMS = 25  # 한 주 최대 개수 (GUIDE.md)
 BASIS = {"공식": "✅ 공식", "보도": "📰 보도"}
 
 
@@ -66,12 +65,9 @@ def validate(data: dict) -> list:
         key = s.get("key")
         if key not in keys:
             problems.append(f"알 수 없는 분야 key: {key!r} (가능: {', '.join(k for k, _ in SECTIONS)})")
-        items = s.get("items", [])
-        if len(items) > MAX_PER_SECTION:
-            problems.append(f"[{key}] 뉴스가 {len(items)}개: 분야당 최대 {MAX_PER_SECTION}개")
-        for i, it in enumerate(items, 1):
+        for i, it in enumerate(s.get("items", []), 1):
             where = f"[{key} {i}]"
-            for field in ("headline", "summary", "why", "device", "open", "source", "url"):
+            for field in ("headline", "summary", "source", "url"):
                 if not str(it.get(field, "")).strip():
                     problems.append(f"{where} {field} 가 비어 있음")
             if it.get("url") and not is_link(it["url"]):
@@ -105,11 +101,7 @@ def build_blocks(data: dict) -> list:
     💾 메모리
 
     1. 제목
-    무슨 일
-    → 업계 의미
-    🔬 소자 깊이
-    🧪 남은 숙제
-    📘 용어 풀이 (있을 때만)
+    사실 요약
     출처 · ✅ 공식 · 논문 (있을 때만)
     """
     d = date.fromisoformat(data["date"])
@@ -130,12 +122,7 @@ def build_blocks(data: dict) -> list:
             lines += [
                 f"<b>{n}. {esc(it['headline'])}</b>",
                 esc(it["summary"]),
-                f"→ {esc(it['why'])}",
-                f"🔬 {esc(it['device'])}",
-                f"🧪 {esc(it['open'])}",
             ]
-            if str(it.get("term", "")).strip():
-                lines.append(f"📘 {esc(it['term'])}")
             src = f'<a href="{esc(it["url"])}">{esc(it["source"])}</a> · {BASIS.get(it.get("basis"), "")}'
             if it.get("paper"):
                 src += f' · <a href="{esc(it["paper"])}">논문</a>'
