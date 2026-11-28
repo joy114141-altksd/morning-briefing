@@ -6,6 +6,7 @@
 - 점심·저녁: 기숙사(봉룡학사) 공통 코너 메인 메뉴 + 공대식당(해오름) 코너별 메인 메뉴 전부 + 행단골 2층 나폴리폴리(메뉴 있는 날만)
 - 공대식당의 4,500원 미만 메뉴(치킨텐더 등 사이드)와 가격이 없는 행사 메뉴(버거 등)는 뺍니다
 - 학교 홈페이지에 가격이 있으면 메뉴 옆에 가격 (기숙사 공통 코너는 사이트에 가격이 없음)
+- 비나 눈이 오는 날은 날짜 옆에 ☔70% / ❄️ (맑은 날은 표시 없음)
 
 ## 구조
 
@@ -18,6 +19,7 @@ morning-briefing/
     ├── skku_menu.py                ← 학교 홈페이지 식당 메뉴·가격 읽기 (행단골·해오름)
     ├── dorm_menu.py                ← 봉룡학사 식단 읽기
     ├── web.py                      ← 학교 서버 접속 (재시도)
+    ├── weather.py                  ← 오늘 비·눈 예보 (Open-Meteo, API 키 필요 없음)
     ├── config.json                 ← 보낼 끼니·코너 설정
     └── tests/                      ← 점검용 식단 페이지 샘플
 ```
@@ -25,7 +27,7 @@ morning-briefing/
 ## 받게 되는 메시지
 
 ```
-11/26 (목)
+11/26 (목) ☔70%
 
 참치김치찌개, 제육컵밥 1.0
 사골떡만둣국 / 뚝배기나가사키만두전골 매콤불고기비빔밥 고구마치즈돈까스 6.8 / 뼈해장국 7.5
@@ -35,6 +37,7 @@ morning-briefing/
 17:30-18:30 / 17-18:20
 ```
 
+- 날짜 옆 `☔70%`: 학교(자연과학캠퍼스) 07~21시 중 강수확률이 50% 이상이거나 비가 1mm 이상 올 때, 숫자는 그중 최고 강수확률. 눈이 오면 `❄️`. 맑은 날이나 날씨를 못 받아온 날은 아무것도 안 붙습니다.
 - 위 세 줄은 조식·점심·저녁. 점심·저녁은 **기숙사 / 공대 / 나폴리** 순서로 ` / ` 구분 (나폴리는 메뉴 있는 날만).
 - 아래 두 줄은 점심·저녁 운영시간, 같은 순서. 이웃한 식당 시간이 같으면 하나로 씁니다 (공대·나폴리 `11-13:30`).
 - 가격은 천 원 단위(6.8 = 6,800원). 공대 기본 가격 6,000원은 생략.
@@ -65,6 +68,7 @@ morning-briefing/
 | ↳ `drop_unpriced` | `true`면 가격이 안 적힌 메뉴(버거 데이 등)도 뺍니다 |
 | `dorm_menu.corners` | 보낼 기숙사 코너 이름. 예: `["공통", "신관"]` (2개 이상이면 메뉴 앞에 `[코너]` 표시) |
 | `main_only` | `true`면 메인 메뉴 하나만, `false`면 반찬까지 전부 |
+| `weather` | 날씨 표시. `enabled`=false 면 끄기, `hours`=볼 시간대(KST), `rain_probability`=☔ 붙일 강수확률(%), `rain_mm`=이만큼 비가 오면 확률과 상관없이 ☔, `snow_cm`=❄️ 붙일 적설(cm), `latitude`·`longitude`=위치 |
 | `meals` | 보낼 끼니. 기숙사 아침을 넣으려면 `{ "name": "아침", "tab": "foodlist01" }` 추가 |
 
 ## 실행 시각
@@ -91,8 +95,8 @@ GitHub 토큰은 이 저장소에 **Actions: Read and write** 권한이 있어�
 - Actions → Morning Briefing → Run workflow: `date`를 비우면 오늘 식단, 날짜를 넣으면 그날 식단을 보냅니다.
 - 내 컴퓨터에서: `cd briefing && python briefing.py --dry-run` (전송 없이 메시지만 출력)
 - 접속 없이 샘플로 (`briefing` 폴더에서):
-  `python briefing.py --date 2026-11-25 --dry-run --html tests/sample_2026-11-25.html --skku-html B=tests/sample_skku_haengdan_B_2026-11-26.html --skku-html 공대:L=tests/sample_skku_haeorum_L_2026-11-26.html --skku-html 공대:D=tests/sample_skku_haeorum_D_2026-11-26.html --skku-html 나폴리폴리:L=tests/sample_skku_haengdan_L_2026-11-26.html`
-  (해오름·행단골 중식 샘플은 실제 저장본이 아니라 같은 틀로 만든 가상 페이지입니다)
+  `python briefing.py --date 2026-11-25 --dry-run --html tests/sample_2026-11-25.html --skku-html B=tests/sample_skku_haengdan_B_2026-11-26.html --skku-html 공대:L=tests/sample_skku_haeorum_L_2026-11-26.html --skku-html 공대:D=tests/sample_skku_haeorum_D_2026-11-26.html --skku-html 나폴리폴리:L=tests/sample_skku_haengdan_L_2026-11-26.html --weather-json tests/sample_weather_rain.json`
+  (해오름·행단골 중식 샘플과 날씨 샘플(`sample_weather_*.json`)은 실제 저장본이 아니라 같은 틀로 만든 가상 데이터입니다)
 
 ## Secrets 설정
 

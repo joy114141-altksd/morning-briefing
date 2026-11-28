@@ -35,6 +35,7 @@ import requests
 
 import dorm_menu
 import skku_menu
+import weather
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config.json"
@@ -281,9 +282,9 @@ def short_time(t: str) -> str:
     return f"{one(a)}-{one(b)}"
 
 
-def build_message(day: date, config: dict, breakfast, dorm, restaurants) -> str:
+def build_message(day: date, config: dict, breakfast, dorm, restaurants, weather_text: str = "") -> str:
     """
-    11/26 (목)
+    11/26 (목) ☔70%
 
     참치김치찌개, 제육컵밥 1.0
     사골떡만둣국 / 뚝배기나가사키만두전골 매콤불고기비빔밥 고구마치즈돈까스 6.8 / 뼈해장국 7.5
@@ -294,7 +295,9 @@ def build_message(day: date, config: dict, breakfast, dorm, restaurants) -> str:
 
     끼니마다 한 줄(조식·점심·저녁), 식당은 layout 순서대로 ' / ' 로 구분 (메뉴 없음 '-', 확인 실패 '?').
     아래는 같은 순서의 운영시간 (조식은 빼고, 이웃한 같은 시간은 하나로).
+    날짜 옆 ☔/❄️ 는 비·눈 오는 날만 (weather.py).
     """
+    title = f"<b>{day_label(day)}</b>" + (f" {weather_text}" if weather_text else "")
     dcfg = config["dorm_menu"]
     restaurants = restaurants or []
     rcfg_by_name = {r["cfg"]["name"]: r["cfg"] for r in restaurants}
@@ -354,9 +357,9 @@ def build_message(day: date, config: dict, breakfast, dorm, restaurants) -> str:
                 time_lines.append(html_escape(" / ".join(merged)))
 
     if not any_menu:
-        return f"<b>{day_label(day)}</b> 오늘은 식단이 없어요"
+        return f"{title} 오늘은 식단이 없어요"
 
-    lines = [f"<b>{day_label(day)}</b>", ""] + menu_lines
+    lines = [title, ""] + menu_lines
     if any(t.strip("-/ ") for t in time_lines):
         lines += [""] + time_lines
     if links:
@@ -374,6 +377,7 @@ def main():
     parser.add_argument("--html", help="접속하지 않고 저장해둔 기숙사 식단 페이지로 점검")
     parser.add_argument("--skku-html", action="append", default=[], metavar="분류=파일",
                         help="접속하지 않고 저장해둔 학교 식당 페이지로 점검 (B=조식, 식당이름:L / 식당이름:D)")
+    parser.add_argument("--weather-json", help="접속하지 않고 저장해둔 날씨 응답(JSON)으로 점검")
     parser.add_argument("--force", action="store_true", help="주말에도 실행")
     args = parser.parse_args()
 
@@ -398,7 +402,8 @@ def main():
     breakfast = get_breakfast(day, bcfg, skku_files.get("B")) if bcfg.get("enabled", True) else None
     dorm = get_dorm(day, config["dorm_menu"], args.html)
     restaurants = get_restaurants(day, config.get("restaurants", []), config["dorm_menu"]["meals"], skku_files)
-    message = build_message(day, config, breakfast, dorm, restaurants)
+    weather_text = weather.get(day, config.get("weather", {}), args.weather_json, log=log)
+    message = build_message(day, config, breakfast, dorm, restaurants, weather_text)
     failed = (isinstance(breakfast, Exception) or isinstance(dorm, Exception)
               or any(isinstance(v, Exception) for r in restaurants for v in r["meals"].values()))
 

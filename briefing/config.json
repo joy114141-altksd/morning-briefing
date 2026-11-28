@@ -98,5 +98,17 @@
       "공통"
     ],
     "main_only": true
+  },
+  "weather": {
+    "enabled": true,
+    "latitude": 37.2937,
+    "longitude": 126.9746,
+    "hours": [
+      7,
+      21
+    ],
+    "rain_probability": 50,
+    "rain_mm": 1.0,
+    "snow_cm": 0.1
   }
 }
