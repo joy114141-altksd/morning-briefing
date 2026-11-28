@@ -1,0 +1,77 @@
+name: Semicon News
+
+on:
+  # 매일 아침 Claude 예약 작업이 semicon/GUIDE.md 기준으로 뉴스를 골라
+  # semicon/news/YYYY-MM-DD.json 을 main 에 푸시하면 자동으로 텔레그램 전송.
+  push:
+    branches: [main]
+    paths:
+      - "semicon/news/*.json"
+  # 점검·재전송용: Actions → Semicon News → Run workflow
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "이 날짜(YYYY-MM-DD)의 뉴스 파일을 다시 보내기. 비우면 오늘."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: semicon-news
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 이번 푸시에서 바뀐 뉴스 파일을 찾으려고
+
+      - name: Python 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 뉴스 전송
+        working-directory: semicon
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ -n "$NEWS_DATE" ]; then
+              python send_news.py --date "$NEWS_DATE"
+            else
+              python send_news.py
+            fi
+            exit $?
+          fi
+          # 이번 푸시에서 새로 생기거나 바뀐 뉴스 파일만 보낸다
+          if git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            files=$(git diff --name-only --diff-filter=AM "$BEFORE" "$AFTER" -- 'news/*.json')
+          else
+            files=$(git show --name-only --diff-filter=AM --format= "$AFTER" -- 'news/*.json')
+          fi
+          files=$(echo "$files" | sed 's#^semicon/##' | sort)
+          if [ -z "$files" ]; then
+            echo "보낼 뉴스 파일이 없습니다."
+            exit 0
+          fi
+          status=0
+          for f in $files; do
+            echo "== $f"
+            python send_news.py "$f" || status=1
+          done
+          exit $status
+        env:
+          EVENT: ${{ github.event_name }}
+          NEWS_DATE: ${{ inputs.date }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

@@ -107,6 +107,17 @@ GitHub 토큰은 이 저장소에 **Actions: Read and write** 권한이 있어�
 | `TELEGRAM_BOT_TOKEN` | 텔레그램 봇 토큰 |
 | `TELEGRAM_CHAT_ID` | 채팅 ID |
 
+## 반도체 뉴스 브리핑 (`semicon/`)
+
+매일 아침 반도체 뉴스 중 믿을 만하고 파급력 있는 것만 골라 같은 텔레그램 봇으로 보냅니다.
+분야는 넓은 것 → 좁은 것 순서: 🌐 반도체 전반 → 🔬 반도체 소자 → 🏭 장비·소재·패키징.
+
+- 뉴스 고르기: Claude 예약 작업이 매일 아침 [`semicon/GUIDE.md`](semicon/GUIDE.md) 기준으로 골라 `semicon/news/YYYY-MM-DD.json`을 main에 푸시
+- 보내기: 그 푸시를 받아 `Semicon News` 워크플로(`.github/workflows/semicon-news.yml`)가 `semicon/send_news.py`로 전송 (Secrets는 위 2개 그대로 사용, cron-job.org 설정 필요 없음)
+- 기준 바꾸기: `semicon/GUIDE.md`만 고치면 다음 날부터 반영
+- 다시 보내기: Actions → Semicon News → Run workflow (`date` 비우면 오늘)
+- 점검: `cd semicon && python send_news.py news/2026-11-28.json --dry-run`
+
 ## 사용 시간
 
 한 번에 보통 1분 안팎(학교 서버 재시도 시 최대 약 20분), 한 달 평일 약 22회라 무료 사용량 안에서 충분합니다.
