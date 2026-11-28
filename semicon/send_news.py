@@ -29,10 +29,10 @@ WEEKDAYS = "월화수목금토일"
 MAX_LEN = 3900  # 텔레그램 한 메시지 한도 4096자, 여유를 둔다
 
 SECTIONS = [  # 넓은 분야 → 좁은 분야 순서
-    ("general", "🌐 반도체 전반"),
-    ("device", "🔬 반도체 소자"),
-    ("equipment", "🏭 장비·소재·패키징"),
+    ("flow", "🌐 큰 흐름"),
+    ("tech", "🔬 기술·소자"),
 ]
+MAX_ITEMS = 3  # 하루 최대 개수 (GUIDE.md)
 BASIS = {"공식": "✅ 공식", "보도": "📰 보도"}
 
 
@@ -67,6 +67,9 @@ def validate(data: dict) -> list:
                 problems.append(f"{where} url 이 http(s) 링크가 아님")
             if it.get("basis") not in BASIS:
                 problems.append(f"{where} basis 는 '공식' 또는 '보도' 여야 함: {it.get('basis')!r}")
+    total = sum(len(s.get("items", [])) for s in data.get("sections", []))
+    if total > MAX_ITEMS:
+        problems.append(f"뉴스가 {total}개: 하루 최대 {MAX_ITEMS}개까지만")
     return problems
 
 
@@ -86,8 +89,10 @@ def build_blocks(data: dict) -> list:
     🌐 반도체 전반
 
     1. 제목
-    요약
-    → 의미
+    무슨 일
+    → 업계에서 왜 중요한지
+    🔬 소자 관점
+    📘 용어 풀이 (있을 때만)
     Reuters · ✅ 공식
     """
     d = date.fromisoformat(data["date"])
@@ -105,8 +110,12 @@ def build_blocks(data: dict) -> list:
                 f"<b>{n}. {esc(it['headline'])}</b>",
                 esc(it["summary"]),
                 f"→ {esc(it['why'])}",
-                f'<a href="{esc(it["url"])}">{esc(it["source"])}</a> · {BASIS.get(it.get("basis"), "")}',
             ]
+            if str(it.get("device", "")).strip():
+                lines.append(f"🔬 {esc(it['device'])}")
+            if str(it.get("term", "")).strip():
+                lines.append(f"📘 {esc(it['term'])}")
+            lines.append(f'<a href="{esc(it["url"])}">{esc(it["source"])}</a> · {BASIS.get(it.get("basis"), "")}')
             blocks.append("\n".join(lines))
     if n == 0:
         blocks.append(esc(data.get("note") or "오늘은 크게 볼 뉴스가 없어요"))
